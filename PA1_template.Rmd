@@ -5,21 +5,131 @@ output:
     keep_md: true
 ---
 
+Loading libraries
+
+```{r, message=F}
+library(dplyr)
+library(lattice)
+```
 
 ## Loading and preprocessing the data
 
+Dataset is loaded into object `data`.
 
+```{r}
+unzip('activity.zip')
+data = read.csv('activity.csv', stringsAsFactors = T) %>% 
+  mutate(clock = sprintf('%02d:%02d', floor(interval/100), interval %% 100),
+         time = as.Date(sprintf("%s %s", date ,clock), format="%Y-%m-%d %H:%M"),
+         date = as.Date(date)) %>% tbl_df
+data
+```
 
 ## What is mean total number of steps taken per day?
 
+```{r}
+steps.by.day = data %>% 
+  group_by(date) %>%
+  summarise(
+    total = sum(steps, na.rm=T) )
+steps.by.day
+```
 
+```{r, fig.width=6, fig.height=5}
+hist(steps.by.day[['total']], main='Total number of steps taken each day', xlab='steps')
+```
+
+Calculated mean and median for number of steps taken each day.
+
+```{r}
+steps.by.day %>% 
+  summarise(
+    mean = mean(total),
+    median = median(total) )
+```
 
 ## What is the average daily activity pattern?
 
+```{r}
+steps.by.interval = data %>% 
+  group_by(interval) %>%
+  summarise(
+    mean = mean(steps, na.rm=T),
+    median = median(steps, na.rm=T))
+with(steps.by.interval, plot(interval, mean, type='l', ylab='Average setps'))
+```
 
+The maximum number of steps is obtained at
+
+```{r}
+subset(steps.by.interval, mean == max(mean))
+```
 
 ## Imputing missing values
 
+The table has `r sum(!complete.cases(data))` rows with missing data `NA`.
 
+```{r}
+table(complete.cases(data))
+```
+
+To impute the `r sum(!complete.cases(data))` row I going to use the median calculated in the corresponding 5 minute period.
+
+```{r}
+data.imp = left_join(data, steps.by.interval, by='interval') %>%
+  mutate(
+    steps = ifelse(is.na(steps), median , steps) ) %>%
+  select_(.dots = names(data))
+data.imp
+```
+
+The histogram
+
+```{r}
+steps.by.day.imp = data.imp %>% 
+  group_by(date) %>%
+  summarise(
+    total = sum(steps, na.rm=T) )
+```
+
+```{r, fig.width=6, fig.height=5}
+hist(steps.by.day.imp[['total']], main='Total number of steps taken each day', xlab='steps')
+```
+
+  * Before imputation
+  
+```{r}
+steps.by.day %>% 
+  summarise(
+    mean = mean(total),
+    median = median(total) )
+```
+
+  * After imputation
+  
+```{r}
+steps.by.day.imp %>% 
+  summarise(
+    mean = mean(total),
+    median = median(total) )
+```
+
+> After imputation we have seen that the estimate of the mean differs.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r}
+data.imp = data.imp %>% 
+  mutate(
+    period = ifelse(weekdays(date) %in% c('Saturday', 'Sunday'), 'weekend', 'weekday') )
+steps.by.interval_period.imp = data.imp %>% 
+  group_by(interval, period) %>%
+  summarise(
+    mean = mean(steps, na.rm=T),
+    median = median(steps, na.rm=T))
+```
+
+```{r, fig.width=6, fig.height=5}
+xyplot(mean~interval|period, data=steps.by.interval_period.imp, type='l', 
+       layout=c(1,2), ylab='Number of steps', xlab='Interval')
+```
